@@ -2,6 +2,7 @@ import torch.nn as nn
 import onion.util
 import numbers
 import numpy as np
+import torch.nn.functional as F
 
 floatX = 'float32'
 
@@ -58,7 +59,7 @@ class RHN(nn.Module):
         return noise
 
     def step(self, i_for_H_t, i_for_T_t, h_tm1, noise_s):
-        tanh, sigm = tt.tanh, tt.nnet.sigmoid
+        tanh, sigm = F.tanh, F.sigmoid
         noise_s_for_H = noise_s if self.tied_noise else noise_s[0]
         noise_s_for_T = noise_s if self.tied_noise else noise_s[1]
 
@@ -81,9 +82,9 @@ class RHN(nn.Module):
         y_t = s_l
         return y_t
 
-    def __call__(self, h0, seq, repeat_h0=1):
+    def forward(self, h0, seq, repeat_h0=1):
         inputs = seq.dimshuffle((1,0,2))
-        (_seq_size, batch_size, _) = inputs.shape
+        (_seq_size, batch_size, _) = inputs.size()
         hidden_size = self.size
         # We first compute the linear transformation of the inputs over all timesteps.
         # This is done outside of scan() in order to speed up computation.
@@ -101,8 +102,9 @@ class RHN(nn.Module):
         noise_s = self.get_dropout_noise((batch_size, hidden_size), self.drop_s)
         if not self.tied_noise:
           noise_s = tt.stack(noise_s, self.get_dropout_noise((batch_size, hidden_size), self.drop_s))
-
-        H0 = tt.repeat(h0, inputs.shape[1], axis=0) if repeat_h0 else h0
+        #TODO  replace SCAN with a LOOP
+        #H0 = tt.repeat(h0, inputs.shape[1], axis=0) if repeat_h0 else h0
+        H0 = h0.expand(inputs.size(1)) if repeat_h0 else h0
         out, _ = theano.scan(self.step,
                              sequences=[i_for_H, i_for_T],
                              outputs_info=[H0],
