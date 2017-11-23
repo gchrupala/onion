@@ -4,6 +4,7 @@ import onion.util as util
 import numbers
 import numpy as np
 import torch.nn.functional as F
+from functools import reduce
 
 floatX = 'float32'
 
@@ -117,6 +118,7 @@ class RHN(nn.Module):
             out.append(self.step(i_for_H[t], i_for_T[t], H0, noise_s))
         return torch.stack(out).permute(1, 0, 2)
 
+
 class RHNH0(nn.Module):
     def __init__(self, size_in, size, fixed=False, **kwargs):
         """An RHN layer with its own initial state."""
@@ -128,6 +130,16 @@ class RHNH0(nn.Module):
     def forward(self, inp):
         return self.RHN(self.h0(), inp)
 
+class WithH0(nn.Module):
+    def __init__(self, RNN, fixed=False):
+        """An recurrent layer with its own initial state."""
+        super(WithH0, self).__init__()
+        self.RNN = RNN
+        self.h0 = Zeros(self.RNN.size, requires_grad=not fixed)
+
+    def forward(self, inp):
+        return self.RNN(self.h0(), inp)
+
 class Zeros(nn.Module):
     """Returns a Variable vector of specified size initialized with zeros."""
     def __init__(self, size, requires_grad=True):
@@ -138,29 +150,59 @@ class Zeros(nn.Module):
     def forward(self):
         return self.zeros
 #
-# class StackedRHN(Layer):
-#     """A stack of RHNs.
-#     """
-#     def __init__(self, size_in, size, depth=2, residual=False, fixed=False, **kwargs):
+
+class Residual(nn.Module):
+    """Residualizes a layer."""
+    def __init__(self, layer):
+        super(Residual, self).__init__()
+        self.layer = layer
+
+    def forward(self, inp):
+        return inp + self.layer(inp)
+
+class Identity(nn.Module):
+    """Identity layer."""
+    def __init__(self):
+        super(Identity, self).__init__()
+
+    def forward(self, inp):
+        return inp
+
+class Compose(nn.Module):
+
+    def __init__(self, first, second):
+        super(Compose, self).__init__()
+        self.first = first
+        self.second = second
+
+    def forward(self, inp):
+        return self.first(self.second(inp))
+
+    def intermediate(self, inp):
+        x = self.second(inp)
+        z = self.first(x)
+        return (x,z)
+
+class StackedRHN(nn.Module):
+    def __init__(self, size_in, size, depth=2, residual=False, fixed=False, **kwargs):
 # #    def __init__(self, size_in, size, depth=2, dropout_prob=0.0, residual=False, fixed=False, **kwargs):
-#         autoassign(locals())
-#         f = lambda x: Residual(x) if self.residual else x
-#         self.layers = [ f(RHN0(self.size, self.size, fixed=self.fixed, **self.kwargs))  for _ in range(1,self.depth) ]
-#         self.bottom = RHN(self.size_in, self.size, **self.kwargs)
-#         self.stack = reduce(lambda z, x: x.compose(z), self.layers, Identity())
-#
-#     def params(self):
-#         return params(self.bottom, self.stack)
-#
-#     def __call__(self, h0, inp, repeat_h0=0):
-#         return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
-#
-#     def intermediate(self, h0, inp, repeat_h0=0):
-#         zs = [ self.bottom(h0, inp, repeat_h0=repeat_h0) ]
-#         for layer in self.layers:
-#             z = layer(zs[-1])
-#             zs.append(z)
-#         return theano.tensor.stack(* zs).dimshuffle((1,2,0,3)) # FIXME deprecated interface
+        super(StackedRHN, self).__init__()
+        util.autoassign(locals())
+        f = lambda x: Residual(x) if self.residual else x
+        self.layers = torch.nn.ModuleList(
+            [ f(RHNH0(self.size, self.size, fixed=self.fixed, **self.kwargs))  for _ in range(1,self.depth) ] )
+        self.bottom = RHN(self.size_in, self.size, **self.kwargs)
+        self.stack = reduce(lambda z, x: Compose(x, z), self.layers, Identity())
+
+    def forward(self, h0, inp, repeat_h0=0):
+        return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
+
+    def intermediate(self, h0, inp, repeat_h0=0):
+        zs = [ self.bottom(h0, inp, repeat_h0=repeat_h0) ]
+        for layer in self.layers:
+            z = layer(zs[-1])
+            zs.append(z)
+        return torch.stack(* zs).permute(1,2,0,3)
 #
 # def StackedRHN0(size_in, size, depth, fixed=False, **kwargs):
 #     """A stacked RHN layer with its own initial state."""
