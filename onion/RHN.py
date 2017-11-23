@@ -50,8 +50,6 @@ class RHN(nn.Module):
 
     def apply_dropout(self, x, noise):
         if self.training:
-            #print("noise", noise.size())
-            #print("x", x.size())
             return noise * x
         else:
             return x
@@ -107,10 +105,7 @@ class RHN(nn.Module):
         noise_s = self.get_dropout_noise((batch_size, hidden_size), self.drop_s)
         if not self.tied_noise:
           noise_s = torch.stack(noise_s, self.get_dropout_noise((batch_size, hidden_size), self.drop_s))
-        #TODO  replace SCAN with a LOOP
-        #H0 = tt.repeat(h0, inputs.shape[1], axis=0) if repeat_h0 else h0
-        #print("inputs", inputs.size())
-        #print("h0", h0.size())
+
         H0 = h0.expand((batch_size, self.size)) if repeat_h0 else h0
         #out, _ = theano.scan(self.step,
         #                     sequences=[i_for_H, i_for_T],
@@ -122,13 +117,26 @@ class RHN(nn.Module):
             out.append(self.step(i_for_H[t], i_for_T[t], H0, noise_s))
         return torch.stack(out).permute(1, 0, 2)
 
-# def RHN0(size_in, size, fixed=False, **kwargs):
-#     """A GRU layer with its own initial state."""
-#     if fixed:
-#         return WithH0(FixedZeros(size), RHN(size_in, size, **kwargs))
-#     else:
-#         return WithH0(Zeros(size), RHN(size_in, size, **kwargs))
-#
+class RHNH0(nn.Module):
+    def __init__(self, size_in, size, fixed=False, **kwargs):
+        """An RHN layer with its own initial state."""
+        super(RHNH0, self).__init__()
+        util.autoassign(locals())
+        self.h0 = Zeros(self.size, requires_grad=not fixed)
+        self.RHN = RHN(size_in, size, **kwargs)
+
+    def forward(self, inp):
+        return self.RHN(self.h0(), inp)
+
+class Zeros(nn.Module):
+    """Returns a Variable vector of specified size initialized with zeros."""
+    def __init__(self, size, requires_grad=True):
+        super(Zeros, self).__init__()
+        util.autoassign(locals())
+        self.zeros = torch.nn.Parameter(torch.zeros(self.size), requires_grad=self.requires_grad)
+
+    def forward(self):
+        return self.zeros
 #
 # class StackedRHN(Layer):
 #     """A stack of RHNs.
