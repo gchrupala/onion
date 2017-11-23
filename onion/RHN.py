@@ -1,14 +1,15 @@
 import torch.nn as nn
-import onion.util
+import torch
+import onion.util as util
 import numbers
 import numpy as np
 import torch.nn.functional as F
 
 floatX = 'float32'
 
-def Linear(nn.Module):
+class Linear(nn.Module):
 
-    def __init__(self, in_size, out_size, bias_init=None, init_scale=0.04):
+    def __init__(self, in_size, out_size, bias_init='uniform', init_scale=0.04):
         super(Linear, self).__init__()
         util.autoassign(locals())
         self.layer = nn.Linear(in_size, out_size, bias=bias_init is not None)
@@ -48,15 +49,19 @@ class RHN(nn.Module):
                 self.recurT.append(Linear(in_size=hidden_size, out_size=hidden_size, bias_init=self.init_T_bias))
 
     def apply_dropout(self, x, noise):
-        if self..training:
-            return noise * x
+        if self.training:
+            #print("noise", noise.size())
+            #print("x", x.size())
+            #return noise * x
+            # FIXME disable noise for now FIXME
+            return x
         else:
             return x
 
     def get_dropout_noise(self, shape, dropout_p):
         keep_p = 1 - dropout_p
         noise = (1. / keep_p) * torch.bernoulli(torch.zeros(shape) + keep_p)
-        return noise
+        return torch.autograd.Variable(noise)
 
     def step(self, i_for_H_t, i_for_T_t, h_tm1, noise_s):
         tanh, sigm = F.tanh, F.sigmoid
@@ -83,7 +88,8 @@ class RHN(nn.Module):
         return y_t
 
     def forward(self, h0, seq, repeat_h0=1):
-        inputs = seq.dimshuffle((1,0,2))
+        #print(seq.size())
+        inputs = seq.permute(1, 0, 2)
         (_seq_size, batch_size, _) = inputs.size()
         hidden_size = self.size
         # We first compute the linear transformation of the inputs over all timesteps.
@@ -98,15 +104,61 @@ class RHN(nn.Module):
         i_for_H = self.LinearH(i_for_H)
         i_for_T = self.LinearT(i_for_T)
 
+        print("i_for_H", i_for_H.size())
         # Dropout noise for recurrent hidden state.
         noise_s = self.get_dropout_noise((batch_size, hidden_size), self.drop_s)
         if not self.tied_noise:
-          noise_s = tt.stack(noise_s, self.get_dropout_noise((batch_size, hidden_size), self.drop_s))
+          noise_s = torch.stack(noise_s, self.get_dropout_noise((batch_size, hidden_size), self.drop_s))
         #TODO  replace SCAN with a LOOP
         #H0 = tt.repeat(h0, inputs.shape[1], axis=0) if repeat_h0 else h0
-        H0 = h0.expand(inputs.size(1)) if repeat_h0 else h0
-        out, _ = theano.scan(self.step,
-                             sequences=[i_for_H, i_for_T],
-                             outputs_info=[H0],
-                             non_sequences = [noise_s])
-        return out.dimshuffle((1, 0, 2))
+        #print("inputs", inputs.size())
+        #print("h0", h0.size())
+        H0 = h0.expand((batch_size, self.size)) if repeat_h0 else h0
+        #out, _ = theano.scan(self.step,
+        #                     sequences=[i_for_H, i_for_T],
+        #                     outputs_info=[H0],
+        #                     non_sequences = [noise_s])
+        out = []
+        print("At t=0", i_for_H[0].size(), i_for_T[0].size(), H0.size(), noise_s.size())
+        for t in range(len(i_for_H)):
+            out.append(self.step(i_for_H[t], i_for_T[t], H0, noise_s))
+        return torch.stack(out).permute(1, 0, 2)
+
+# def RHN0(size_in, size, fixed=False, **kwargs):
+#     """A GRU layer with its own initial state."""
+#     if fixed:
+#         return WithH0(FixedZeros(size), RHN(size_in, size, **kwargs))
+#     else:
+#         return WithH0(Zeros(size), RHN(size_in, size, **kwargs))
+#
+#
+# class StackedRHN(Layer):
+#     """A stack of RHNs.
+#     """
+#     def __init__(self, size_in, size, depth=2, residual=False, fixed=False, **kwargs):
+# #    def __init__(self, size_in, size, depth=2, dropout_prob=0.0, residual=False, fixed=False, **kwargs):
+#         autoassign(locals())
+#         f = lambda x: Residual(x) if self.residual else x
+#         self.layers = [ f(RHN0(self.size, self.size, fixed=self.fixed, **self.kwargs))  for _ in range(1,self.depth) ]
+#         self.bottom = RHN(self.size_in, self.size, **self.kwargs)
+#         self.stack = reduce(lambda z, x: x.compose(z), self.layers, Identity())
+#
+#     def params(self):
+#         return params(self.bottom, self.stack)
+#
+#     def __call__(self, h0, inp, repeat_h0=0):
+#         return self.stack(self.bottom(h0, inp, repeat_h0=repeat_h0))
+#
+#     def intermediate(self, h0, inp, repeat_h0=0):
+#         zs = [ self.bottom(h0, inp, repeat_h0=repeat_h0) ]
+#         for layer in self.layers:
+#             z = layer(zs[-1])
+#             zs.append(z)
+#         return theano.tensor.stack(* zs).dimshuffle((1,2,0,3)) # FIXME deprecated interface
+#
+# def StackedRHN0(size_in, size, depth, fixed=False, **kwargs):
+#     """A stacked RHN layer with its own initial state."""
+#     if fixed:
+#         return WithH0(FixedZeros(size), StackedRHN(size_in, size, depth, fixed=fixed, **kwargs))
+#     else:
+#         return WithH0(Zeros(size), StackedRHN(size_in, size, depth, **kwargs))
