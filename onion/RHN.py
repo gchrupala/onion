@@ -202,7 +202,8 @@ class StackedRHN(nn.Module):
         for layer in self.layers:
             z = layer(zs[-1])
             zs.append(z)
-        return torch.stack(* zs).permute(1,2,0,3)
+        print("zs", len(zs), zs[0].size())
+        return torch.stack(zs).permute(1,2,0,3)
 #
 # def StackedRHN0(size_in, size, depth, fixed=False, **kwargs):
 #     """A stacked RHN layer with its own initial state."""
