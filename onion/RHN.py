@@ -52,9 +52,7 @@ class RHN(nn.Module):
         if self.training:
             #print("noise", noise.size())
             #print("x", x.size())
-            #return noise * x
-            # FIXME disable noise for now FIXME
-            return x
+            return noise * x
         else:
             return x
 
