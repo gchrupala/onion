@@ -204,10 +204,3 @@ class StackedRHN(nn.Module):
             zs.append(z)
         print("zs", len(zs), zs[0].size())
         return torch.stack(zs).permute(1,2,0,3)
-#
-# def StackedRHN0(size_in, size, depth, fixed=False, **kwargs):
-#     """A stacked RHN layer with its own initial state."""
-#     if fixed:
-#         return WithH0(FixedZeros(size), StackedRHN(size_in, size, depth, fixed=fixed, **kwargs))
-#     else:
-#         return WithH0(Zeros(size), StackedRHN(size_in, size, depth, **kwargs))
