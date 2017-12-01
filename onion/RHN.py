@@ -138,21 +138,37 @@ class WithH0(nn.Module):
         """An recurrent layer with its own initial state."""
         super(WithH0, self).__init__()
         self.RNN = RNN
-        self.h0 = Zeros(self.RNN.size, requires_grad=not fixed)
+        if fixed:
+            self.h0 = FixedZeros(self.RNN.size)
+        else:
+            self.h0 = Zeros(self.RNN.size)
 
     def forward(self, inp):
         return self.RNN(self.h0(), inp)
 
 class Zeros(nn.Module):
-    """Returns a Variable vector of specified size initialized with zeros."""
-    def __init__(self, size, requires_grad=True):
+    """Returns a Parameter vector of specified size initialized with zeros."""
+    def __init__(self, size):
         super(Zeros, self).__init__()
         util.autoassign(locals())
-        self.zeros = torch.nn.Parameter(torch.zeros(self.size), requires_grad=self.requires_grad)
+        self.zeros = torch.nn.Parameter(torch.zeros(self.size))
 
     def forward(self):
         return self.zeros
-#
+
+class FixedZeros(nn.Module):
+    """Returns a vector of specified size initialized with zeros."""
+    def __init__(self, size):
+        super(FixedZeros, self).__init__()
+        util.autoassign(locals())
+        if torch.cuda.is_available():
+            self.zeros = torch.autograd.Variable(torch.zeros(self.size), requires_grad=True).cuda()
+        else:
+            self.zeros = torch.autograd.Variable(torch.zeros(self.size), requires_grad=True)
+
+
+    def forward(self):
+        return self.zeros
 
 class Residual(nn.Module):
     """Residualizes a layer."""
