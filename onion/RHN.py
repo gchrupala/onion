@@ -58,7 +58,10 @@ class RHN(nn.Module):
     def get_dropout_noise(self, shape, dropout_p):
         keep_p = 1 - dropout_p
         noise = (1. / keep_p) * torch.bernoulli(torch.zeros(shape) + keep_p)
-        return torch.autograd.Variable(noise)
+        if torch.cuda.is_available():
+            noise = noise.cuda()
+        noise = torch.autograd.Variable(noise)
+        return noise
 
     def step(self, i_for_H_t, i_for_T_t, h_tm1, noise_s):
         tanh, sigm = F.tanh, F.sigmoid
@@ -101,7 +104,7 @@ class RHN(nn.Module):
         i_for_H = self.LinearH(i_for_H)
         i_for_T = self.LinearT(i_for_T)
 
-        print("i_for_H", i_for_H.size())
+
         # Dropout noise for recurrent hidden state.
         noise_s = self.get_dropout_noise((batch_size, hidden_size), self.drop_s)
         if not self.tied_noise:
@@ -113,7 +116,7 @@ class RHN(nn.Module):
         #                     outputs_info=[H0],
         #                     non_sequences = [noise_s])
         out = []
-        print("At t=0", i_for_H[0].size(), i_for_T[0].size(), H0.size(), noise_s.size())
+
         for t in range(len(i_for_H)):
             out.append(self.step(i_for_H[t], i_for_T[t], H0, noise_s))
         return torch.stack(out).permute(1, 0, 2)
@@ -202,5 +205,19 @@ class StackedRHN(nn.Module):
         for layer in self.layers:
             z = layer(zs[-1])
             zs.append(z)
-        print("zs", len(zs), zs[0].size())
+
         return torch.stack(zs).permute(1,2,0,3)
+
+class StackedRHNH0(nn.Module):
+    "Stack of RHNs with own initial state."
+
+    def __init__(self, size_in, size, depth=2, residual=False, fixed=False, **kwargs):
+        super(StackedRHNH0, self).__init__()
+        util.autoassign(locals())
+        self.layer = WithH0(StackedRHN(size_in, size, depth=depth, residual=residual, **kwargs), fixed=fixed)
+
+    def forward(self, inp):
+        return self.layer(inp)
+
+    def intermediate(self, inp):
+        return self.layer.intermediate(self.layer.h0(), inp)
