@@ -161,11 +161,9 @@ class FixedZeros(nn.Module):
     def __init__(self, size):
         super(FixedZeros, self).__init__()
         util.autoassign(locals())
+        self.zeros = torch.autograd.Variable(torch.zeros(self.size), requires_grad=True)
         if torch.cuda.is_available():
-            self.zeros = torch.autograd.Variable(torch.zeros(self.size), requires_grad=True).cuda()
-        else:
-            self.zeros = torch.autograd.Variable(torch.zeros(self.size), requires_grad=True)
-
+            self.zeros = self.zeros.cuda()
 
     def forward(self):
         return self.zeros
