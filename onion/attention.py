@@ -7,8 +7,8 @@ class SelfAttention(nn.Module):
     def __init__(self, size_in, size, activation=F.tanh):
         super(SelfAttention, self).__init__()
         util.autoassign(locals())
-        self.Regress1 = nn.Linear(self.size_in, self.size)
-        self.Regress2 = nn.Linear(self.size, 1)
+        self.Regress1 = util.make_linear(self.size_in, self.size)
+        self.Regress2 = util.make_linear(self.size, 1)
 
     def forward(self, h):
         alpha = softmax_time(self.Regress2(self.activation(self.Regress1(h))))

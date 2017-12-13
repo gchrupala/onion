@@ -127,7 +127,7 @@ class RHNH0(nn.Module):
         """An RHN layer with its own initial state."""
         super(RHNH0, self).__init__()
         util.autoassign(locals())
-        self.h0 = Zeros(self.size, requires_grad=not fixed)
+        self.h0 = FixedZeros(self.size) if self.fixed else Zeros(self.size)
         self.RHN = RHN(size_in, size, **kwargs)
 
     def forward(self, inp):
